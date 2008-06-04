@@ -4,7 +4,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <pthread.h>
 #define FUSE_USE_VERSION 26
@@ -22,16 +25,17 @@
 
 
 /* Global variables */
-pthread_mutex_t global_mutex;
-struct Server *server_list;
-int server_list_size;
+static pthread_mutex_t global_mutex;
+static struct Server *server_list;
+static int server_list_size;
+static time_t server_list_mtime;
 
 /* Types */
 struct Server
 {
     struct Server *next;
     char *name;
-} *server_list;
+};
 
 
 #define WARN(msg) \
@@ -64,7 +68,7 @@ static void free_server_list()
     server_list_size = 0;
 }
 
-static void read_server_list()
+static void reload_server_list()
 {
     FILE *fp;
     char path[MAX_PATH], *p;
@@ -73,7 +77,7 @@ static void read_server_list()
     fp = fopen(HOSTSFILE, "rt");
     if (fp == NULL)
     {
-        WARN("Cannot open hosts.txt");
+        WARN("Cannot open hosts file");
         return;
     }
 
@@ -100,6 +104,24 @@ static void read_server_list()
     }
 
     fclose(fp);
+}
+
+static void update_server_list()
+{
+    struct stat st;
+
+    if (stat(HOSTSFILE, &st) != 0)
+    {
+        WARN("Could not stat hosts file");
+        return;
+    }
+
+    if (st.st_mtime > server_list_mtime)
+    {
+        NOTE("Reloading the server list");
+        reload_server_list();
+        server_list_mtime = st.st_mtime;
+    }
 }
 
 static char *mksmbpath(char *buf, const char *path)
@@ -176,6 +198,7 @@ static int foxtrot_readdir( const char *path, void *buf, fuse_fill_dir_t filler,
         filler(buf, "..", NULL, 0);
 
         pthread_mutex_lock(&global_mutex);
+        update_server_list();
         for (server = server_list; server != NULL; server = server->next)
         {
             filler(buf, server->name, NULL, 0);
@@ -332,7 +355,7 @@ void *foxtrot_init(struct fuse_conn_info *conn)
     NOTE("Foxtrot starting up!");
 
     samba_init();
-    read_server_list();
+    update_server_list();
     pthread_mutex_init(&global_mutex, NULL);
 
     return NULL;
