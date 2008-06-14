@@ -1,4 +1,4 @@
-CFLAGS=-Wall -g -O0
+CFLAGS=-Wall -Wextra -Werror -g -O2
 CFLAGS+=`pkg-config --cflags fuse`
 LDLIBS=-lsmbclient -lfuse
 

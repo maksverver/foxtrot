@@ -23,6 +23,9 @@
 #define SMB_MAX_PACKET_LENGTH   65536
 #define MAX_PATH                1024
 
+/* Set this to 1 to trace all invocations of FUSE callback functions */
+#define TRACE_INVOCATIONS       0
+
 
 /* Global variables */
 static pthread_mutex_t global_mutex;
@@ -141,7 +144,9 @@ static int foxtrot_getattr(const char *path, struct stat *stbuf)
     char smbpath[MAX_PATH];
     int result;
 
+#if TRACE_INVOCATIONS
     fprintf(stderr, "getattr path=%s\n", path);
+#endif
 
     memset(stbuf, 0, sizeof(struct stat));
 
@@ -188,7 +193,9 @@ static int foxtrot_readdir( const char *path, void *buf, fuse_fill_dir_t filler,
     (void) offset;
     (void) fi;
 
+#if TRACE_INVOCATIONS
     fprintf(stderr, "readdir path=%s\n", path);
+#endif
 
     if (strcmp(path, "/") == 0)
     {
@@ -248,7 +255,9 @@ static int foxtrot_open(const char *path, struct fuse_file_info *fi)
     char smbpath[MAX_PATH];
     int fd;
 
+#if TRACE_INVOCATIONS
     fprintf(stderr, "open path=%s flags=%d\n", path, (int)fi->flags);
+#endif
 
     /* Enforce read-only access for now, since write is not implemented */
     if((fi->flags & 3) != O_RDONLY)
@@ -276,9 +285,15 @@ static int foxtrot_open(const char *path, struct fuse_file_info *fi)
 int foxtrot_read(const char *path, char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi)
 {
-    ssize_t nread, result, chunk;
+    size_t nread, chunk;
+    ssize_t result;
+
+#if TRACE_INVOCATIONS
     fprintf(stderr, "read path=%s fd=%d size=%lld offset=%lld\n",
                     path, (int)fi->fh, (long long)size, (long long)offset);
+#else
+    (void)path;
+#endif
 
     pthread_mutex_lock(&global_mutex);
     if (smbc_lseek((int)fi->fh, offset, SEEK_SET) == (off_t)-1)
@@ -312,7 +327,11 @@ int foxtrot_release(const char *path, struct fuse_file_info *fi)
 {
     int res;
 
+#if TRACE_INVOCATIONS
     fprintf(stderr, "release path=%s fd=%d\n", path, (int)fi->fh);
+#else
+    (void)path;
+#endif
 
     res = smbc_close(fi->fh);
     if (res != 0) WARN("smbc_close failed");
@@ -336,6 +355,8 @@ static void get_auth_data(
     char *un, int unlen,
     char *pw, int pwlen )
 {
+    (void)srv;
+    (void)shr;
     strncpy(wg, SMB_WORKGROUP, wglen);
     strncpy(un, SMB_USERNAME, unlen);
     strncpy(pw, SMB_PASSWORD, pwlen);
@@ -351,6 +372,8 @@ static void samba_init()
 
 void *foxtrot_init(struct fuse_conn_info *conn)
 {
+    (void)conn;
+
     open_logfile();
     NOTE("Foxtrot starting up!");
 
